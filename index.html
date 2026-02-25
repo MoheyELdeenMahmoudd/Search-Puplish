@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>أداة تنظيف المقالات | Almaster Tech</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="toast-container"></div>
+
+    <div class="app-container">
+        <header class="app-header">
+            <h1>أداة تنظيف وضبط المقالات (SEO)</h1>
+            <p>قم بفلترة الأكواد، الحفاظ على التنسيقات والصور، وحماية الـ Shortcodes بضغطة زر</p>
+        </header>
+
+        <div class="tabs-wrapper">
+            <button class="tab-btn active" data-tab="visual">
+                📝 محرر المحتوى (دوكس/وورد)
+            </button>
+            <button class="tab-btn" data-tab="code">
+                💻 محرر الأكواد (ووردبريس)
+            </button>
+        </div>
+
+        <div class="workspace">
+            <div id="visual-tab" class="tab-content active">
+                <label class="input-label">1. الصق المحتوى المرئي هنا:</label>
+                <div id="visualEditor" class="editor-box" contenteditable="true" spellcheck="false"></div>
+            </div>
+
+            <div id="code-tab" class="tab-content">
+                <label class="input-label">1. الصق كود الـ HTML هنا:</label>
+                <textarea id="codeEditor" class="editor-box" spellcheck="false" placeholder="الصق أكواد ووردبريس هنا..."></textarea>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="cleanBtn" class="primary-btn">
+                    تنظيف واستخراج الكود 🔥
+                </button>
+                <button id="clearBtn" class="danger-btn">
+                    مسح المحتوى 🗑️
+                </button>
+            </div>
+        </div>
+
+        <div class="output-section">
+            <label class="input-label">2. كود HTML النظيف وجاهز للنشر:</label>
+            <textarea id="outputArea" class="output-box" readonly placeholder="ستظهر النتيجة هنا..."></textarea>
+            <button id="copyBtn" class="success-btn">
+                نسخ الكود ✔
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
