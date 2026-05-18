@@ -39,37 +39,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function smartClean(html) {
-        // 1. التنظيف الأولي وحماية الـ Regex
-        const commentRegex = new RegExp('<' + '!--[\\s\\S]*?--' + '>', 'gi');
-        const wordRegex = new RegExp('<\\/?[a-z]+:[^>]*>', 'gi');
-        const xmlRegex = new RegExp('<\\/?xml[^>]*>', 'gi');
-
-        html = html.replace(commentRegex, '');
-        html = html.replace(wordRegex, '');
-        html = html.replace(xmlRegex, '');
+        // 1. التنظيف الأولي للشوائب
+        html = html.replace(//gi, '');
+        html = html.replace(/<\/?o:[^>]*>/gi, ''); // تنظيف أكواد الوورد المزعجة
+        html = html.replace(/<\/?xml[^>]*>/gi, '');
 
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        Array.from(doc.querySelectorAll('script, style, iframe, noscript, meta, link')).forEach(el => el.remove());
+        Array.from(doc.querySelectorAll('script, style, iframe, noscript, meta, link, svg')).forEach(el => el.remove());
 
-        // 2. فك الـ Divs بأمان
-        Array.from(doc.querySelectorAll('div')).forEach(div => safeUnwrap(div));
+        const blockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'blockquote', 'figure', 'div'];
 
-        // 3. تحويل الوسوم القديمة
+        // 2. معالجة الـ divs بذكاء (التي كانت تسبب كسر الأسطر)
+        Array.from(doc.querySelectorAll('div')).forEach(div => {
+            const hasBlock = Array.from(div.children).some(child => blockTags.includes(child.tagName.toLowerCase()));
+            if (hasBlock) {
+                safeUnwrap(div);
+            } else {
+                // إذا كان الـ div يحتوي على نصوص مضمنة، نحوله إلى فقرة P لربط الجمل ببعضها
+                const p = doc.createElement('p');
+                while (div.firstChild) p.appendChild(div.firstChild);
+                div.replaceWith(p);
+            }
+        });
+
+        // 3. توحيد وسوم البولد والمائل
         Array.from(doc.querySelectorAll('b')).forEach(el => {
             const strong = doc.createElement('strong');
-            strong.innerHTML = el.innerHTML;
+            while(el.firstChild) strong.appendChild(el.firstChild);
             el.replaceWith(strong);
         });
         
         Array.from(doc.querySelectorAll('i')).forEach(el => {
             const em = doc.createElement('em');
-            em.innerHTML = el.innerHTML;
+            while(el.firstChild) em.appendChild(el.firstChild);
             el.replaceWith(em);
         });
 
-        // 4. صيد التنسيقات (Bold/Italic)
+        // 4. استخراج التنسيقات (Bold/Italic) المخفية في الستايلات
         Array.from(doc.querySelectorAll('*')).forEach(el => {
             if (!el.style) return;
             const fw = el.style.fontWeight || '';
@@ -80,25 +88,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const tag = el.tagName.toLowerCase();
 
             if (isBold && !['strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
-                el.innerHTML = `<strong>${el.innerHTML}</strong>`;
+                const strong = doc.createElement('strong');
+                while(el.firstChild) strong.appendChild(el.firstChild);
+                el.appendChild(strong);
                 el.style.fontWeight = '';
             }
             if (isItalic && tag !== 'em') {
-                el.innerHTML = `<em>${el.innerHTML}</em>`;
+                const em = doc.createElement('em');
+                while(el.firstChild) em.appendChild(el.firstChild);
+                el.appendChild(em);
                 el.style.fontStyle = '';
             }
         });
 
+        // منع تعدد الـ H1 في المقال للحفاظ على السيو
         const h1s = Array.from(doc.querySelectorAll('h1'));
         if (h1s.length > 1) {
             h1s.slice(1).forEach(h1 => {
                 const h2 = doc.createElement('h2');
-                h2.innerHTML = h1.innerHTML;
+                while(h1.firstChild) h2.appendChild(h1.firstChild);
                 h1.replaceWith(h2);
             });
         }
 
-        // 5. تصفية الوسوم والخصائص
+        // 5. إزالة الوسوم غير المسموح بها مع الحفاظ على ما بداخلها
         const allowedTags = ['p','h1','h2','h3','h4','h5','h6','ul','ol','li','strong','em','a','img','table','thead','tbody','tr','td','th','blockquote','br'];
         const allowedAttrs = ['href','src','alt','target','rel','colspan','rowspan', 'class', 'width', 'height'];
         
@@ -116,13 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 6. تأمين الروابط
+        // 6. حماية الروابط وتأمينها
         Array.from(doc.querySelectorAll('a')).forEach(link => {
             const href = link.getAttribute('href') || '';
             if (!/^(https?|mailto|tel|whatsapp|sms):/i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
                 link.removeAttribute('href');
             }
-            
             if (link.getAttribute('target') === '_blank') {
                 let currentRel = link.getAttribute('rel') || '';
                 if (!currentRel.includes('noopener')) {
@@ -131,43 +143,46 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 7. تغليف النصوص الحرة بـ P (تم إصلاح مشكلة البولد والروابط هنا)
-        const blockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'blockquote'];
+        // 7. الحل الجذري لمشكلة تكسير الأسطر في الووردبريس
+        // تجميع النصوص العادية + البولد + الروابط في فقرة متصلة <p> واحدة
+        const inlineTags = ['a', 'strong', 'em', 'img', 'br'];
         let currentP = null;
-        const bodyNodes = Array.from(doc.body.childNodes);
         
-        bodyNodes.forEach(node => {
-            const isBlock = node.nodeType === Node.ELEMENT_NODE && blockTags.includes(node.tagName.toLowerCase());
-            const isWhiteSpace = node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '';
-            const isShortcode = node.nodeType === Node.TEXT_NODE && node.textContent.trim().startsWith('[') && node.textContent.trim().endsWith(']');
+        const childNodes = Array.from(doc.body.childNodes);
+        
+        childNodes.forEach(node => {
+            const isText = node.nodeType === Node.TEXT_NODE;
+            const isInlineEl = node.nodeType === Node.ELEMENT_NODE && inlineTags.includes(node.tagName.toLowerCase());
+            
+            if (isText && node.textContent.trim() === '') {
+                if (!currentP) return; // تجاهل المسافات خارج الفقرات
+            }
 
-            if (isBlock || isShortcode) {
-                currentP = null; // إنهاء الفقرة الحالية إذا وجدنا وسم بلوك أو شورت كود
-            } else if (!isWhiteSpace) {
+            if (isText || isInlineEl) {
                 if (!currentP) {
                     currentP = doc.createElement('p');
                     node.parentNode.insertBefore(currentP, node);
                 }
-                currentP.appendChild(node); // إضافة النصوص والروابط والبولد داخل نفس الفقرة
+                currentP.appendChild(node);
+            } else {
+                currentP = null; // إغلاق الفقرة والبدء في فقرة جديدة إذا واجهنا عنصر بلوك (مثل صورة كبيرة أو عنوان)
             }
         });
 
-        // 8. إزالة الوسوم الفارغة
-        for(let i=0; i<3; i++){
-            Array.from(doc.querySelectorAll('p, h2, h3, strong, em, li')).forEach(el => {
-                if (el.innerHTML.trim() === '') {
-                    el.remove();
-                } else if (el.tagName.toLowerCase() === 'p' && el.innerHTML.trim().startsWith('[') && el.innerHTML.trim().endsWith(']')) {
-                    safeUnwrap(el);
-                }
-            });
-        }
+        // 8. تنظيف الشوائب والوسوم الفارغة
+        Array.from(doc.querySelectorAll('p, h2, h3, strong, em')).forEach(el => {
+            if (el.innerHTML.trim() === '' || el.innerHTML === '<br>') {
+                el.remove();
+            } else if (el.tagName.toLowerCase() === 'p' && el.innerHTML.trim().startsWith('[') && el.innerHTML.trim().endsWith(']')) {
+                safeUnwrap(el); // إخراج الشورت كود من الـ P حتى لا يعطله
+            }
+        });
 
         let finalCode = doc.body.innerHTML;
         finalCode = finalCode.replace(/&nbsp;|\u00A0/g, ' ');
         finalCode = finalCode.replace(/\t/g, '');
         
-        // ترتيب المسافات بطريقة آمنة لا تدمر الروابط والبولد
+        // ترتيب نظيف للكود بدون إفساد الفقرات المتصلة
         finalCode = finalCode.replace(/<\/(p|h1|h2|h3|h4|h5|h6|ul|ol|table|blockquote)>/gi, '</$1>\n\n');
         finalCode = finalCode.replace(/\n\s*\n/g, '\n\n');
         
@@ -183,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             outputArea.value = smartClean(rawHTML);
-            showToast("✅ تم تنظيف النصوص والأكواد بذكاء!");
+            showToast("✅ تم تنظيف الكود وإصلاح التنسيقات!");
         } catch(err) {
             console.error(err);
             showToast("❌ حدث خطأ داخلي أثناء التنظيف","error");
@@ -193,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     copyBtn.addEventListener('click', () => {
         const txt = outputArea.value.trim();
         if(!txt) { showToast("⚠️ لا يوجد محتوى للنسخ","error"); return; }
-        navigator.clipboard.writeText(txt).then(() => showToast("📄 تم النسخ!"));
+        navigator.clipboard.writeText(txt).then(() => showToast("📄 تم النسخ بنجاح!"));
     });
 
     clearBtn.addEventListener('click', () => {
