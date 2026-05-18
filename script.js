@@ -116,15 +116,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 6. تأمين الروابط (بدون إضافة Nofollow أو الإجبار على فتح نافذة جديدة)
+        // 6. تأمين الروابط
         Array.from(doc.querySelectorAll('a')).forEach(link => {
             const href = link.getAttribute('href') || '';
-            // التأكد من صحة الرابط فقط
             if (!/^(https?|mailto|tel|whatsapp|sms):/i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
                 link.removeAttribute('href');
             }
             
-            // إضافة حماية أمنية فقط لو كان الرابط أصلاً مضبوط على فتح في نافذة جديدة
             if (link.getAttribute('target') === '_blank') {
                 let currentRel = link.getAttribute('rel') || '';
                 if (!currentRel.includes('noopener')) {
@@ -133,15 +131,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 7. تغليف النصوص الحرة بـ P
-        Array.from(doc.body.childNodes).forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
-                if (node.textContent.trim().startsWith('[') && node.textContent.trim().endsWith(']')) {
-                    return; // تجاهل الشورت كود
+        // 7. تغليف النصوص الحرة بـ P (تم إصلاح مشكلة البولد والروابط هنا)
+        const blockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'blockquote'];
+        let currentP = null;
+        const bodyNodes = Array.from(doc.body.childNodes);
+        
+        bodyNodes.forEach(node => {
+            const isBlock = node.nodeType === Node.ELEMENT_NODE && blockTags.includes(node.tagName.toLowerCase());
+            const isWhiteSpace = node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '';
+            const isShortcode = node.nodeType === Node.TEXT_NODE && node.textContent.trim().startsWith('[') && node.textContent.trim().endsWith(']');
+
+            if (isBlock || isShortcode) {
+                currentP = null; // إنهاء الفقرة الحالية إذا وجدنا وسم بلوك أو شورت كود
+            } else if (!isWhiteSpace) {
+                if (!currentP) {
+                    currentP = doc.createElement('p');
+                    node.parentNode.insertBefore(currentP, node);
                 }
-                const p = doc.createElement('p');
-                p.textContent = node.textContent;
-                node.replaceWith(p);
+                currentP.appendChild(node); // إضافة النصوص والروابط والبولد داخل نفس الفقرة
             }
         });
 
@@ -159,8 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let finalCode = doc.body.innerHTML;
         finalCode = finalCode.replace(/&nbsp;|\u00A0/g, ' ');
         finalCode = finalCode.replace(/\t/g, '');
-        finalCode = finalCode.replace(/>\s+</g, '>\n<');
-        finalCode = finalCode.replace(/\n\s*\n/g, '\n');
+        
+        // ترتيب المسافات بطريقة آمنة لا تدمر الروابط والبولد
+        finalCode = finalCode.replace(/<\/(p|h1|h2|h3|h4|h5|h6|ul|ol|table|blockquote)>/gi, '</$1>\n\n');
+        finalCode = finalCode.replace(/\n\s*\n/g, '\n\n');
         
         return finalCode.trim();
     }
