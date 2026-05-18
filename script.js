@@ -11,10 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentMode = 'visual';
 
-    tabBtns.forEach(btn => {
+    Array.from(tabBtns).forEach(btn => {
         btn.addEventListener('click', e => {
-            tabBtns.forEach(t => t.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
+            Array.from(tabBtns).forEach(t => t.classList.remove('active'));
+            Array.from(tabContents).forEach(c => c.classList.remove('active'));
             const target = e.currentTarget;
             target.classList.add('active');
             currentMode = target.getAttribute('data-tab');
@@ -39,52 +39,73 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function smartClean(html) {
-        // 1. تنظيف الشوائب المزعجة من وورد وجوجل دوكس
-        html = html.replace(//gi, '');
-        html = html.replace(/<\/?(o|st1|v):[^>]*>/gi, '');
+        // 1. التنظيف الأولي (كودك الأصلي)
+        const commentRegex = new RegExp('<' + '!--[\\s\\S]*?--' + '>', 'gi');
+        const wordRegex = new RegExp('<\\/?[a-z]+:[^>]*>', 'gi');
+        const xmlRegex = new RegExp('<\\/?xml[^>]*>', 'gi');
+
+        html = html.replace(commentRegex, '');
+        html = html.replace(wordRegex, '');
+        html = html.replace(xmlRegex, '');
 
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // 2. إزالة الوسوم الخبيثة والستايلات
-        Array.from(doc.querySelectorAll('script, style, iframe, noscript, meta, link, svg, button')).forEach(el => el.remove());
+        Array.from(doc.querySelectorAll('script, style, iframe, noscript, meta, link')).forEach(el => el.remove());
 
-        // 3. فك وسوم SPAN و DIV بأمان شديد (هذا يمنع تكسير الأسطر مستقبلاً)
-        Array.from(doc.querySelectorAll('span, div')).forEach(el => safeUnwrap(el));
+        // 2. فك الـ Divs بأمان
+        Array.from(doc.querySelectorAll('div')).forEach(div => safeUnwrap(div));
 
-        // 4. توحيد تنسيقات البولد
+        // 3. تحويل الوسوم القديمة
         Array.from(doc.querySelectorAll('b')).forEach(el => {
             const strong = doc.createElement('strong');
             strong.innerHTML = el.innerHTML;
             el.replaceWith(strong);
         });
+        
         Array.from(doc.querySelectorAll('i')).forEach(el => {
             const em = doc.createElement('em');
             em.innerHTML = el.innerHTML;
             el.replaceWith(em);
         });
 
-        // استخراج البولد المخفي في الستايلات
+        // 4. صيد التنسيقات (Bold/Italic)
         Array.from(doc.querySelectorAll('*')).forEach(el => {
-            if (el.style) {
-                if (el.style.fontWeight === 'bold' || parseInt(el.style.fontWeight) >= 600) {
-                    if (!['strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(el.tagName.toLowerCase())) {
-                        el.innerHTML = `<strong>${el.innerHTML}</strong>`;
-                    }
-                }
-                if (el.style.fontStyle === 'italic' && !['em'].includes(el.tagName.toLowerCase())) {
-                     el.innerHTML = `<em>${el.innerHTML}</em>`;
-                }
-                el.removeAttribute('style');
+            if (!el.style) return;
+            const fw = el.style.fontWeight || '';
+            const fs = el.style.fontStyle || '';
+            
+            const isBold = fw === 'bold' || fw === 'bolder' || parseInt(fw, 10) >= 600;
+            const isItalic = fs === 'italic';
+            const tag = el.tagName.toLowerCase();
+
+            if (isBold && !['strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+                el.innerHTML = `<strong>${el.innerHTML}</strong>`;
+                el.style.fontWeight = '';
+            }
+            if (isItalic && tag !== 'em') {
+                el.innerHTML = `<em>${el.innerHTML}</em>`;
+                el.style.fontStyle = '';
             }
         });
 
-        // 5. فلترة التاجات والسماح بالعناوين والقوائم
+        // تحويل الـ H1 الإضافية إلى H2 للحفاظ على السيو
+        const h1s = Array.from(doc.querySelectorAll('h1'));
+        if (h1s.length > 1) {
+            h1s.slice(1).forEach(h1 => {
+                const h2 = doc.createElement('h2');
+                h2.innerHTML = h1.innerHTML;
+                h1.replaceWith(h2);
+            });
+        }
+
+        // 5. تصفية الوسوم والخصائص
         const allowedTags = ['p','h1','h2','h3','h4','h5','h6','ul','ol','li','strong','em','a','img','table','thead','tbody','tr','td','th','blockquote','br'];
         const allowedAttrs = ['href','src','alt','target','rel','colspan','rowspan', 'class', 'width', 'height'];
-
+        
         Array.from(doc.body.querySelectorAll('*')).forEach(el => {
             if (!el.parentNode) return;
+            
             if (!allowedTags.includes(el.tagName.toLowerCase())) {
                 safeUnwrap(el);
             } else {
@@ -96,9 +117,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 🌟 6. الحل الجذري والآمن 100% لمشكلة البولد والروابط 🌟
-        // نجمع الكلمات العادية مع البولد والروابط في "بلوك" واحد
-        let pWrapper = null;
+        // 6. تأمين الروابط
+        Array.from(doc.querySelectorAll('a')).forEach(link => {
+            const href = link.getAttribute('href') || '';
+            if (!/^(https?|mailto|tel|whatsapp|sms):/i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
+                link.removeAttribute('href');
+            }
+            
+            if (link.getAttribute('target') === '_blank') {
+                let currentRel = link.getAttribute('rel') || '';
+                if (!currentRel.includes('noopener')) {
+                    link.setAttribute('rel', 'noopener noreferrer');
+                }
+            }
+        });
+
+        // ----------------------------------------------------
+        // 7. التعديل الجراحي لحل مشكلة كسر الأسطر (البولد والروابط)
+        // ----------------------------------------------------
+        let currentP = null;
         const inlineTags = ['a', 'strong', 'em', 'img', 'br'];
 
         Array.from(doc.body.childNodes).forEach(node => {
@@ -106,85 +143,72 @@ document.addEventListener('DOMContentLoaded', () => {
             const isInline = node.nodeType === Node.ELEMENT_NODE && inlineTags.includes(node.tagName.toLowerCase());
 
             if (isText || isInline) {
-                // تجاهل المسافات البيضاء العشوائية
-                if (isText && node.textContent.trim() === '') return;
-                
-                // ترك الـ Shortcodes في حالها
+                // تجاوز المسافات الفارغة تماماً
+                if (isText && node.textContent.trim() === '') {
+                    if (currentP) currentP.appendChild(node);
+                    return;
+                }
+                // تجاوز الشورت كود
                 if (isText && node.textContent.trim().startsWith('[') && node.textContent.trim().endsWith(']')) {
-                    pWrapper = null;
+                    currentP = null;
                     return;
                 }
 
-                if (!pWrapper) {
-                    pWrapper = doc.createElement('p');
-                    doc.body.insertBefore(pWrapper, node);
+                if (!currentP) {
+                    currentP = doc.createElement('p');
+                    node.parentNode.insertBefore(currentP, node);
                 }
-                pWrapper.appendChild(node);
+                currentP.appendChild(node); // جمع الكلمات والروابط معاً في نفس السطر
             } else {
-                pWrapper = null; // إغلاق الفقرة والبدء من جديد إذا لقينا عنوان H2 أو غيره
+                // في حالة قابلنا عنوان H2 أو قائمة، نتركه كما هو ونغلق الفقرة الحالية
+                currentP = null;
             }
         });
-
-        // 7. تأمين الروابط
-        Array.from(doc.querySelectorAll('a')).forEach(link => {
-            const href = link.getAttribute('href') || '';
-            if (!/^(https?|mailto|tel|whatsapp|sms):/i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
-                link.removeAttribute('href');
-            }
-            if (link.getAttribute('target') === '_blank') {
-                link.setAttribute('rel', 'noopener noreferrer');
-            }
-        });
+        // ----------------------------------------------------
 
         // 8. إزالة الوسوم الفارغة
-        Array.from(doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, strong, em, li')).forEach(el => {
-            if (el.innerHTML.trim() === '' || el.innerHTML === '<br>') el.remove();
-        });
-
-        // منع تعدد H1
-        const h1s = Array.from(doc.querySelectorAll('h1'));
-        if (h1s.length > 1) {
-            h1s.slice(1).forEach(h1 => {
-                const h2 = doc.createElement('h2');
-                h2.innerHTML = h1.innerHTML;
-                h1.replaceWith(h2);
+        for(let i=0; i<3; i++){
+            Array.from(doc.querySelectorAll('p, h2, h3, strong, em, li')).forEach(el => {
+                if (el.innerHTML.trim() === '') {
+                    el.remove();
+                } else if (el.tagName.toLowerCase() === 'p' && el.innerHTML.trim().startsWith('[') && el.innerHTML.trim().endsWith(']')) {
+                    safeUnwrap(el);
+                }
             });
         }
 
-        // 9. الإخراج
         let finalCode = doc.body.innerHTML;
         finalCode = finalCode.replace(/&nbsp;|\u00A0/g, ' ');
+        finalCode = finalCode.replace(/\t/g, '');
         
-        // استبدال المسافات الزائدة بين التاجات بـ "مسافة" بدلاً من "سطر جديد" (هذا اللي كان بيكسر الأسطر)
-        finalCode = finalCode.replace(/>\s+</g, '> <');
+        // التعديل الثاني: إزالة الكود الذي كان يضيف Enter بين الروابط
+        // وتنظيم المسافات أسفل العناوين والفقرات فقط
         finalCode = finalCode.replace(/<\/(p|h1|h2|h3|h4|h5|h6|ul|ol|table|blockquote)>/gi, '</$1>\n\n');
         finalCode = finalCode.replace(/\n\s*\n/g, '\n\n');
-
+        
         return finalCode.trim();
     }
 
     cleanBtn.addEventListener('click', () => {
         try {
             let rawHTML = currentMode === 'visual' ? visualEditor.innerHTML : codeEditor.value;
-            
-            // قمت بتخفيف قيد الفحص هنا ليعمل بمرونة مع أي شيء تنسخه
-            if(!rawHTML.trim()) { 
-                showToast("⚠️ أدخل محتوى أولاً!","error"); 
+            if(!rawHTML.trim() || !rawHTML.replace(/<[^>]*>/g, '').trim()) { 
+                showToast("⚠️ أدخل محتوى نصي أولاً!","error"); 
                 return; 
             }
 
             outputArea.value = smartClean(rawHTML);
-            showToast("✅ تم التنظيف وجمع الأسطر بنجاح!");
+            showToast("✅ تم التنظيف بنجاح!");
         } catch(err) {
-            console.error("تفاصيل الخطأ:", err);
-            showToast("❌ حدث خطأ، يرجى المحاولة مرة أخرى","error");
+            console.error(err);
+            showToast("❌ حدث خطأ داخلي أثناء التنظيف","error");
         }
     });
 
     copyBtn.addEventListener('click', () => {
         const txt = outputArea.value.trim();
         if(!txt) { showToast("⚠️ لا يوجد محتوى للنسخ","error"); return; }
-        navigator.clipboard.writeText(txt).then(() => showToast("📄 تم النسخ بنجاح!"));
+        navigator.clipboard.writeText(txt).then(() => showToast("📄 تم النسخ!"));
     });
 
     clearBtn.addEventListener('click', () => {
